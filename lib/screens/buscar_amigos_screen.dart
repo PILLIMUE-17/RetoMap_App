@@ -9,9 +9,8 @@ class BuscarAmigosScreen extends StatefulWidget {
   State<BuscarAmigosScreen> createState() => _BuscarAmigosScreenState();
 }
 
-class _BuscarAmigosScreenState extends State<BuscarAmigosScreen>
-    with SingleTickerProviderStateMixin {
-  late TabController _tabCtrl;
+class _BuscarAmigosScreenState extends State<BuscarAmigosScreen> {
+  int _tabActual = 0; // 0=Buscar, 1=Solicitudes, 2=Amigos
 
   // ── Búsqueda ──────────────────────────────────────────
   final _busquedaCtrl = TextEditingController();
@@ -29,36 +28,29 @@ class _BuscarAmigosScreenState extends State<BuscarAmigosScreen>
   List<Map<String, dynamic>> _amigos = [];
   bool _cargandoAmigos = true;
 
-  // ── Estado solicitudes enviadas ───────────────────────
   final Map<int, String> _estadoSolicitud = {};
 
   @override
   void initState() {
     super.initState();
-    _tabCtrl = TabController(length: 3, vsync: this);
-    _tabCtrl.addListener(_onTabChanged);
     _cargarPendientes();
     _cargarAmigos();
   }
 
-  void _onTabChanged() {
-    // Cerrar teclado al salir de la pestaña Buscar
-    if (_tabCtrl.index != 0 && _focusBusqueda.hasFocus) {
-      _focusBusqueda.unfocus();
-    }
-  }
-
   @override
   void dispose() {
-    _tabCtrl.removeListener(_onTabChanged);
-    _tabCtrl.dispose();
     _busquedaCtrl.dispose();
     _focusBusqueda.dispose();
     _debounce?.cancel();
     super.dispose();
   }
 
-  // ── Carga de datos ────────────────────────────────────
+  void _cambiarTab(int idx) {
+    if (idx != 0) _focusBusqueda.unfocus();
+    setState(() => _tabActual = idx);
+  }
+
+  // ── Datos ─────────────────────────────────────────────
   Future<void> _cargarPendientes() async {
     final resp = await ApiService.get('/amistades/pendientes');
     if (!mounted) return;
@@ -77,13 +69,12 @@ class _BuscarAmigosScreenState extends State<BuscarAmigosScreen>
     setState(() {
       _cargandoAmigos = false;
       if (resp.ok && resp.data != null) {
-        _amigos =
-            (resp.data['amigos'] as List? ?? []).cast<Map<String, dynamic>>();
+        _amigos = (resp.data['amigos'] as List? ?? [])
+            .cast<Map<String, dynamic>>();
       }
     });
   }
 
-  // ── Búsqueda con debounce ─────────────────────────────
   void _onBusquedaChanged(String texto) {
     _debounce?.cancel();
     if (texto.trim().isEmpty) {
@@ -96,8 +87,8 @@ class _BuscarAmigosScreenState extends State<BuscarAmigosScreen>
     }
     if (texto.trim().length < 2) return;
     setState(() => _busquedaActiva = true);
-    _debounce =
-        Timer(const Duration(milliseconds: 500), () => _buscar(texto.trim()));
+    _debounce = Timer(
+        const Duration(milliseconds: 500), () => _buscar(texto.trim()));
   }
 
   Future<void> _buscar(String q) async {
@@ -117,21 +108,22 @@ class _BuscarAmigosScreenState extends State<BuscarAmigosScreen>
     });
   }
 
-  // ── Acciones de amistad ───────────────────────────────
   Future<void> _solicitar(int userId) async {
     setState(() => _estadoSolicitud[userId] = 'enviando');
     final resp = await ApiService.post('/amistades/solicitar/$userId', {});
     if (!mounted) return;
-    setState(() => _estadoSolicitud[userId] = resp.ok ? 'enviada' : 'error');
+    setState(() =>
+        _estadoSolicitud[userId] = resp.ok ? 'enviada' : 'error');
     if (!resp.ok) {
-      _snack(
-          resp.mensaje.isNotEmpty ? resp.mensaje : 'Error al enviar solicitud',
-          error: true);
+      _snack(resp.mensaje.isNotEmpty
+          ? resp.mensaje
+          : 'Error al enviar solicitud', error: true);
     }
   }
 
   Future<void> _aceptar(int amistadId) async {
-    final resp = await ApiService.put('/amistades/$amistadId/aceptar', {});
+    final resp =
+        await ApiService.put('/amistades/$amistadId/aceptar', {});
     if (!mounted) return;
     if (resp.ok) {
       _snack('¡Ahora son amigos!');
@@ -156,7 +148,8 @@ class _BuscarAmigosScreenState extends State<BuscarAmigosScreen>
           error ? const Color(0xFFFF4D4D) : const Color(0xFF3DCB6B),
       behavior: SnackBarBehavior.floating,
       margin: const EdgeInsets.all(16),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      shape:
+          RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
     ));
   }
 
@@ -172,110 +165,117 @@ class _BuscarAmigosScreenState extends State<BuscarAmigosScreen>
         elevation: 0,
         title: const Text('Amigos',
             style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
-        bottom: TabBar(
-          controller: _tabCtrl,
-          indicatorColor: const Color(0xFFFF6B35),
-          labelColor: const Color(0xFFFF6B35),
-          unselectedLabelColor: const Color(0xFF7878AA),
-          labelStyle:
-              const TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
-          tabs: [
-            const Tab(text: 'Buscar amigos'),
-            Tab(
-              child: Row(mainAxisSize: MainAxisSize.min, children: [
-                const Text('Solicitudes'),
-                if (pendCount > 0) ...[
-                  const SizedBox(width: 5),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFFF4D4D),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Text('$pendCount',
-                        style: const TextStyle(
-                            fontSize: 9,
-                            fontWeight: FontWeight.w900,
-                            color: Colors.white)),
-                  ),
-                ],
-              ]),
+      ),
+      body: Column(children: [
+        // ── Campo de búsqueda siempre visible ─────────
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+          child: TextField(
+            controller: _busquedaCtrl,
+            focusNode: _focusBusqueda,
+            onChanged: _onBusquedaChanged,
+            onTap: () => _cambiarTab(0),
+            textInputAction: TextInputAction.search,
+            style: const TextStyle(color: Colors.white, fontSize: 14),
+            decoration: InputDecoration(
+              hintText: 'Buscar por nombre o @usuario...',
+              hintStyle: const TextStyle(
+                  color: Color(0xFF7878AA), fontSize: 13),
+              prefixIcon: const Icon(Icons.search,
+                  color: Color(0xFF7878AA), size: 20),
+              suffixIcon: _busquedaCtrl.text.isNotEmpty
+                  ? IconButton(
+                      icon: const Icon(Icons.close,
+                          color: Color(0xFF7878AA), size: 18),
+                      onPressed: () {
+                        _busquedaCtrl.clear();
+                        _focusBusqueda.unfocus();
+                        setState(() {
+                          _resultados = [];
+                          _busquedaActiva = false;
+                          _buscando = false;
+                        });
+                      },
+                    )
+                  : null,
+              filled: true,
+              fillColor: const Color(0xFF181828),
+              contentPadding: const EdgeInsets.symmetric(
+                  vertical: 12, horizontal: 14),
+              border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide:
+                      const BorderSide(color: Color(0x20FFFFFF))),
+              enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide:
+                      const BorderSide(color: Color(0x20FFFFFF))),
+              focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: const BorderSide(
+                      color: Color(0xFFFF6B35), width: 1.5)),
             ),
-            const Tab(text: 'Mis amigos'),
-          ],
+          ),
         ),
-      ),
-      body: TabBarView(
-        controller: _tabCtrl,
-        children: [
-          _buildBuscar(),
-          _buildSolicitudes(),
-          _buildAmigos(),
-        ],
-      ),
+
+        // ── Botones de navegación ─────────────────────
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+          child: Row(children: [
+            _NavBtn(
+              label: 'Buscar',
+              icon: Icons.search,
+              activo: _tabActual == 0,
+              onTap: () => _cambiarTab(0),
+            ),
+            const SizedBox(width: 8),
+            _NavBtn(
+              label: 'Solicitudes',
+              icon: Icons.person_add_outlined,
+              activo: _tabActual == 1,
+              badge: pendCount > 0 ? pendCount : null,
+              onTap: () => _cambiarTab(1),
+            ),
+            const SizedBox(width: 8),
+            _NavBtn(
+              label: 'Mis amigos',
+              icon: Icons.people_outline,
+              activo: _tabActual == 2,
+              onTap: () => _cambiarTab(2),
+            ),
+          ]),
+        ),
+
+        const SizedBox(height: 4),
+
+        // ── Contenido con fade animation ──────────────
+        Expanded(
+          child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 220),
+            transitionBuilder: (child, animation) =>
+                FadeTransition(opacity: animation, child: child),
+            child: KeyedSubtree(
+              key: ValueKey(_tabActual),
+              child: switch (_tabActual) {
+                0 => _buildBuscar(),
+                1 => _buildSolicitudes(),
+                _ => _buildAmigos(),
+              },
+            ),
+          ),
+        ),
+      ]),
     );
   }
 
-  // ── Tab 0: Buscar amigos ──────────────────────────────
+  // ── Contenido tab Buscar ──────────────────────────────
   Widget _buildBuscar() {
-    return Column(children: [
-      Padding(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-        child: TextField(
-          controller: _busquedaCtrl,
-          focusNode: _focusBusqueda,
-          onChanged: _onBusquedaChanged,
-          textInputAction: TextInputAction.search,
-          style: const TextStyle(color: Colors.white, fontSize: 14),
-          decoration: InputDecoration(
-            hintText: 'Buscar por nombre o @usuario...',
-            hintStyle:
-                const TextStyle(color: Color(0xFF7878AA), fontSize: 13),
-            prefixIcon:
-                const Icon(Icons.search, color: Color(0xFF7878AA), size: 20),
-            suffixIcon: _busquedaCtrl.text.isNotEmpty
-                ? IconButton(
-                    icon: const Icon(Icons.close,
-                        color: Color(0xFF7878AA), size: 18),
-                    onPressed: () {
-                      _busquedaCtrl.clear();
-                      _focusBusqueda.unfocus();
-                      setState(() {
-                        _resultados = [];
-                        _busquedaActiva = false;
-                        _buscando = false;
-                      });
-                    },
-                  )
-                : null,
-            filled: true,
-            fillColor: const Color(0xFF181828),
-            contentPadding:
-                const EdgeInsets.symmetric(vertical: 12, horizontal: 14),
-            border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
-                borderSide: const BorderSide(color: Color(0x20FFFFFF))),
-            enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
-                borderSide: const BorderSide(color: Color(0x20FFFFFF))),
-            focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
-                borderSide:
-                    const BorderSide(color: Color(0xFFFF6B35), width: 1.5)),
-          ),
-        ),
-      ),
-      Expanded(child: _buildResultadosBusqueda()),
-    ]);
-  }
-
-  Widget _buildResultadosBusqueda() {
     if (!_busquedaActiva) {
       return const _EstadoVacio(
         emoji: '🔍',
         titulo: 'Busca amigos',
-        subtitulo: 'Escribe el nombre o @usuario para encontrar personas',
+        subtitulo:
+            'Escribe el nombre o @usuario para encontrar personas',
       );
     }
     if (_buscando) {
@@ -287,11 +287,12 @@ class _BuscarAmigosScreenState extends State<BuscarAmigosScreen>
       return const _EstadoVacio(
         emoji: '😕',
         titulo: 'Sin resultados',
-        subtitulo: 'No encontramos usuarios con ese nombre o @usuario',
+        subtitulo:
+            'No encontramos usuarios con ese nombre o @usuario',
       );
     }
     return ListView.builder(
-      padding: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.only(top: 8, bottom: 16),
       itemCount: _resultados.length,
       itemBuilder: (_, i) {
         final u = _resultados[i];
@@ -305,7 +306,7 @@ class _BuscarAmigosScreenState extends State<BuscarAmigosScreen>
     );
   }
 
-  // ── Tab 1: Solicitudes ────────────────────────────────
+  // ── Contenido tab Solicitudes ─────────────────────────
   Widget _buildSolicitudes() {
     if (_cargandoPendientes) {
       return const Center(
@@ -316,7 +317,8 @@ class _BuscarAmigosScreenState extends State<BuscarAmigosScreen>
       return const _EstadoVacio(
         emoji: '📬',
         titulo: 'Sin solicitudes',
-        subtitulo: 'Cuando alguien te envíe una solicitud aparecerá aquí',
+        subtitulo:
+            'Cuando alguien te envíe una solicitud aparecerá aquí',
       );
     }
     return RefreshIndicator(
@@ -324,12 +326,13 @@ class _BuscarAmigosScreenState extends State<BuscarAmigosScreen>
       backgroundColor: const Color(0xFF181828),
       onRefresh: _cargarPendientes,
       child: ListView.builder(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
         itemCount: _pendientes.length,
         itemBuilder: (_, i) {
           final s = _pendientes[i];
           final amistadId = (s['id'] as num?)?.toInt() ?? 0;
-          final user = s['solicitante'] as Map<String, dynamic>? ?? {};
+          final user =
+              s['solicitante'] as Map<String, dynamic>? ?? {};
           final nombre = user['nombre'] as String? ?? 'Usuario';
           final username = user['username'] as String? ?? '';
           final ciudad = user['ciudad'] as String? ?? '';
@@ -343,7 +346,7 @@ class _BuscarAmigosScreenState extends State<BuscarAmigosScreen>
               border: Border.all(color: const Color(0x14FFFFFF)),
             ),
             child: Row(children: [
-              _Avatar(iniciales: _iniciales(nombre), size: 44),
+              _Avatar(iniciales: _ini(nombre), size: 44),
               const SizedBox(width: 10),
               Expanded(
                 child: Column(
@@ -351,48 +354,29 @@ class _BuscarAmigosScreenState extends State<BuscarAmigosScreen>
                     children: [
                       Text(nombre,
                           style: const TextStyle(
-                              fontSize: 13, fontWeight: FontWeight.w700)),
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700)),
                       Text(
                           '@$username${ciudad.isNotEmpty ? '  ·  $ciudad' : ''}',
                           style: const TextStyle(
-                              fontSize: 11, color: Color(0xFF7878AA))),
+                              fontSize: 11,
+                              color: Color(0xFF7878AA))),
                     ]),
               ),
               Row(children: [
-                GestureDetector(
+                _Btn(
+                  label: 'Rechazar',
+                  color: const Color(0xFFFF4D4D),
                   onTap: () => _rechazar(amistadId),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: const Color(0x15FF4D4D),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: const Color(0x40FF4D4D)),
-                    ),
-                    child: const Text('Rechazar',
-                        style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
-                            color: Color(0xFFFF4D4D))),
-                  ),
                 ),
                 const SizedBox(width: 6),
-                GestureDetector(
+                _Btn(
+                  label: 'Aceptar',
+                  gradient: const LinearGradient(colors: [
+                    Color(0xFFFF6B35),
+                    Color(0xFFFF4D88)
+                  ]),
                   onTap: () => _aceptar(amistadId),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 6),
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                          colors: [Color(0xFFFF6B35), Color(0xFFFF4D88)]),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: const Text('Aceptar',
-                        style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.white)),
-                  ),
                 ),
               ]),
             ]),
@@ -402,7 +386,7 @@ class _BuscarAmigosScreenState extends State<BuscarAmigosScreen>
     );
   }
 
-  // ── Tab 2: Mis amigos ─────────────────────────────────
+  // ── Contenido tab Mis amigos ──────────────────────────
   Widget _buildAmigos() {
     if (_cargandoAmigos) {
       return const Center(
@@ -413,7 +397,7 @@ class _BuscarAmigosScreenState extends State<BuscarAmigosScreen>
       return const _EstadoVacio(
         emoji: '👥',
         titulo: 'Aún no tienes amigos',
-        subtitulo: 'Busca usuarios en "Buscar amigos" y envíales una solicitud',
+        subtitulo: 'Busca usuarios arriba y envíales una solicitud',
       );
     }
     return RefreshIndicator(
@@ -421,7 +405,7 @@ class _BuscarAmigosScreenState extends State<BuscarAmigosScreen>
       backgroundColor: const Color(0xFF181828),
       onRefresh: _cargarAmigos,
       child: ListView.builder(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
         itemCount: _amigos.length,
         itemBuilder: (_, i) {
           final u = _amigos[i];
@@ -434,10 +418,10 @@ class _BuscarAmigosScreenState extends State<BuscarAmigosScreen>
           final ciudad = u['ciudad_usuario'] as String? ??
               u['ciudad'] as String? ??
               '';
-          final xp =
-              (u['xp_total_usuario'] as num? ?? u['xp_total'] as num?)
-                  ?.toInt() ??
-                  0;
+          final xp = (u['xp_total_usuario'] as num? ??
+                  u['xp_total'] as num?)
+              ?.toInt() ??
+              0;
 
           return Container(
             margin: const EdgeInsets.only(bottom: 10),
@@ -448,7 +432,7 @@ class _BuscarAmigosScreenState extends State<BuscarAmigosScreen>
               border: Border.all(color: const Color(0x14FFFFFF)),
             ),
             child: Row(children: [
-              _Avatar(iniciales: _iniciales(nombre), size: 44),
+              _Avatar(iniciales: _ini(nombre), size: 44),
               const SizedBox(width: 10),
               Expanded(
                 child: Column(
@@ -456,20 +440,23 @@ class _BuscarAmigosScreenState extends State<BuscarAmigosScreen>
                     children: [
                       Text(nombre,
                           style: const TextStyle(
-                              fontSize: 13, fontWeight: FontWeight.w700)),
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700)),
                       Text(
                           '@$username${ciudad.isNotEmpty ? '  ·  $ciudad' : ''}',
                           style: const TextStyle(
-                              fontSize: 11, color: Color(0xFF7878AA))),
+                              fontSize: 11,
+                              color: Color(0xFF7878AA))),
                     ]),
               ),
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
                   color: const Color(0x1AFFD93D),
                   borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: const Color(0x66FFD93D)),
+                  border:
+                      Border.all(color: const Color(0x66FFD93D)),
                 ),
                 child: Text(
                     '⚡ ${xp >= 1000 ? '${(xp / 1000).toStringAsFixed(1)}k' : '$xp'} XP',
@@ -485,12 +472,134 @@ class _BuscarAmigosScreenState extends State<BuscarAmigosScreen>
     );
   }
 
-  String _iniciales(String nombre) {
-    final palabras = nombre.trim().split(' ');
-    return palabras
+  String _ini(String nombre) {
+    final w = nombre.trim().split(' ');
+    return w
         .take(2)
-        .map((w) => w.isNotEmpty ? w[0].toUpperCase() : '')
+        .map((s) => s.isNotEmpty ? s[0].toUpperCase() : '')
         .join();
+  }
+}
+
+// ── Botón de navegación ────────────────────────────────────
+
+class _NavBtn extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final bool activo;
+  final int? badge;
+  final VoidCallback onTap;
+
+  const _NavBtn({
+    required this.label,
+    required this.icon,
+    required this.activo,
+    required this.onTap,
+    this.badge,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        behavior: HitTestBehavior.opaque,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
+          padding: const EdgeInsets.symmetric(vertical: 9),
+          decoration: BoxDecoration(
+            color: activo
+                ? const Color(0x1AFF6B35)
+                : const Color(0xFF181828),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: activo
+                  ? const Color(0xFFFF6B35)
+                  : const Color(0x14FFFFFF),
+            ),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon,
+                  size: 14,
+                  color: activo
+                      ? const Color(0xFFFF6B35)
+                      : const Color(0xFF7878AA)),
+              const SizedBox(width: 5),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                  color: activo
+                      ? const Color(0xFFFF6B35)
+                      : const Color(0xFF7878AA),
+                ),
+              ),
+              if (badge != null) ...[
+                const SizedBox(width: 4),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 5, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFF4D4D),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text('$badge',
+                      style: const TextStyle(
+                          fontSize: 9,
+                          fontWeight: FontWeight.w900,
+                          color: Colors.white)),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Botón acción (Aceptar / Rechazar) ─────────────────────
+
+class _Btn extends StatelessWidget {
+  final String label;
+  final Color? color;
+  final Gradient? gradient;
+  final VoidCallback onTap;
+
+  const _Btn(
+      {required this.label,
+      required this.onTap,
+      this.color,
+      this.gradient});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding:
+            const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color:
+              gradient == null ? color?.withAlpha(30) : null,
+          gradient: gradient,
+          borderRadius: BorderRadius.circular(10),
+          border: gradient == null
+              ? Border.all(
+                  color: color?.withAlpha(100) ?? Colors.transparent)
+              : null,
+        ),
+        child: Text(label,
+            style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: gradient != null ? Colors.white : color)),
+      ),
+    );
   }
 }
 
@@ -534,7 +643,7 @@ class _Avatar extends StatelessWidget {
   final double size;
   const _Avatar({required this.iniciales, required this.size});
 
-  static const _gradientes = [
+  static const _g = [
     [Color(0xFFFF6B35), Color(0xFFFF4D88)],
     [Color(0xFF9B59FF), Color(0xFF4DAAFF)],
     [Color(0xFF3DCB6B), Color(0xFF00D4AA)],
@@ -544,16 +653,14 @@ class _Avatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final idx = iniciales.isNotEmpty
-        ? iniciales.codeUnitAt(0) % _gradientes.length
-        : 0;
+    final idx =
+        iniciales.isNotEmpty ? iniciales.codeUnitAt(0) % _g.length : 0;
     return Container(
       width: size,
       height: size,
       decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        gradient: LinearGradient(colors: _gradientes[idx]),
-      ),
+          shape: BoxShape.circle,
+          gradient: LinearGradient(colors: _g[idx])),
       child: Center(
         child: Text(
           iniciales.isEmpty ? '?' : iniciales,
@@ -578,15 +685,15 @@ class _UsuarioCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final nombre = usuario['nombre_usuario'] as String? ?? 'Usuario';
-    final username = usuario['username_usuario'] as String? ?? '';
+    final nombre =
+        usuario['nombre_usuario'] as String? ?? 'Usuario';
+    final username =
+        usuario['username_usuario'] as String? ?? '';
     final ciudad = usuario['ciudad_usuario'] as String? ?? '';
     final xp = (usuario['xp_total_usuario'] as num?)?.toInt() ?? 0;
-    final palabras = nombre.trim().split(' ');
-    final ini = palabras
-        .take(2)
-        .map((w) => w.isNotEmpty ? w[0].toUpperCase() : '')
-        .join();
+    final w = nombre.trim().split(' ');
+    final ini =
+        w.take(2).map((s) => s.isNotEmpty ? s[0].toUpperCase() : '').join();
 
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 0, 16, 10),
@@ -671,7 +778,8 @@ class _BtnAgregar extends StatelessWidget {
           borderRadius: BorderRadius.circular(10),
         ),
         child: const Row(mainAxisSize: MainAxisSize.min, children: [
-          Icon(Icons.person_add_outlined, size: 14, color: Colors.white),
+          Icon(Icons.person_add_outlined,
+              size: 14, color: Colors.white),
           SizedBox(width: 4),
           Text('Agregar',
               style: TextStyle(
