@@ -9,44 +9,52 @@ class BuscarAmigosScreen extends StatefulWidget {
   State<BuscarAmigosScreen> createState() => _BuscarAmigosScreenState();
 }
 
-class _BuscarAmigosScreenState extends State<BuscarAmigosScreen>
-    with SingleTickerProviderStateMixin {
-  late TabController _tabCtrl;
-  final _busquedaCtrl = TextEditingController();
+class _BuscarAmigosScreenState extends State<BuscarAmigosScreen> {
+  int _tabActual = 0; // 0=Buscar, 1=Solicitudes, 2=Amigos
 
-  // Búsqueda
+  // ── Búsqueda ──────────────────────────────────────────
+  final _busquedaCtrl = TextEditingController();
+  final _focusBusqueda = FocusNode();
   List<Map<String, dynamic>> _resultados = [];
   bool _buscando = false;
   bool _busquedaActiva = false;
   Timer? _debounce;
 
-  // Solicitudes pendientes
+  // ── Solicitudes pendientes ─────────────────────────────
   List<Map<String, dynamic>> _pendientes = [];
   bool _cargandoPendientes = true;
 
-  // Mis amigos
+  // ── Mis amigos ─────────────────────────────────────────
   List<Map<String, dynamic>> _amigos = [];
   bool _cargandoAmigos = true;
 
-  // Estado de solicitudes enviadas por mí
+  // ── Estado solicitudes enviadas ───────────────────────
   final Map<int, String> _estadoSolicitud = {};
 
   @override
   void initState() {
     super.initState();
-    _tabCtrl = TabController(length: 2, vsync: this);
     _cargarPendientes();
     _cargarAmigos();
   }
 
   @override
   void dispose() {
-    _tabCtrl.dispose();
     _busquedaCtrl.dispose();
+    _focusBusqueda.dispose();
     _debounce?.cancel();
     super.dispose();
   }
 
+  void _cambiarTab(int idx) {
+    if (idx != 0) {
+      // Al salir de Buscar, cierra el teclado limpiamente
+      _focusBusqueda.unfocus();
+    }
+    setState(() => _tabActual = idx);
+  }
+
+  // ── Carga de datos ────────────────────────────────────
   Future<void> _cargarPendientes() async {
     final resp = await ApiService.get('/amistades/pendientes');
     if (!mounted) return;
@@ -65,12 +73,13 @@ class _BuscarAmigosScreenState extends State<BuscarAmigosScreen>
     setState(() {
       _cargandoAmigos = false;
       if (resp.ok && resp.data != null) {
-        _amigos = (resp.data['amigos'] as List? ?? [])
-            .cast<Map<String, dynamic>>();
+        _amigos =
+            (resp.data['amigos'] as List? ?? []).cast<Map<String, dynamic>>();
       }
     });
   }
 
+  // ── Búsqueda con debounce ─────────────────────────────
   void _onBusquedaChanged(String texto) {
     _debounce?.cancel();
     if (texto.trim().isEmpty) {
@@ -104,10 +113,10 @@ class _BuscarAmigosScreenState extends State<BuscarAmigosScreen>
     });
   }
 
+  // ── Acciones de amistad ───────────────────────────────
   Future<void> _solicitar(int userId) async {
     setState(() => _estadoSolicitud[userId] = 'enviando');
-    final resp =
-        await ApiService.post('/amistades/solicitar/$userId', {});
+    final resp = await ApiService.post('/amistades/solicitar/$userId', {});
     if (!mounted) return;
     setState(() => _estadoSolicitud[userId] = resp.ok ? 'enviada' : 'error');
     if (!resp.ok) {
@@ -118,8 +127,7 @@ class _BuscarAmigosScreenState extends State<BuscarAmigosScreen>
   }
 
   Future<void> _aceptar(int amistadId) async {
-    final resp =
-        await ApiService.put('/amistades/$amistadId/aceptar', {});
+    final resp = await ApiService.put('/amistades/$amistadId/aceptar', {});
     if (!mounted) return;
     if (resp.ok) {
       _snack('¡Ahora son amigos!');
@@ -148,6 +156,7 @@ class _BuscarAmigosScreenState extends State<BuscarAmigosScreen>
     ));
   }
 
+  // ── UI ────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     final pendCount = _pendientes.length;
@@ -159,112 +168,102 @@ class _BuscarAmigosScreenState extends State<BuscarAmigosScreen>
         elevation: 0,
         title: const Text('Amigos',
             style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
-        bottom: _busquedaActiva
-            ? null
-            : TabBar(
-                controller: _tabCtrl,
-                indicatorColor: const Color(0xFFFF6B35),
-                labelColor: const Color(0xFFFF6B35),
-                unselectedLabelColor: const Color(0xFF7878AA),
-                labelStyle: const TextStyle(
-                    fontSize: 12, fontWeight: FontWeight.w800),
-                tabs: [
-                  Tab(
-                    child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Text('Solicitudes'),
-                          if (pendCount > 0) ...[
-                            const SizedBox(width: 5),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 6, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFFF4D4D),
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              child: Text('$pendCount',
-                                  style: const TextStyle(
-                                      fontSize: 9,
-                                      fontWeight: FontWeight.w900,
-                                      color: Colors.white)),
-                            ),
-                          ],
-                        ]),
-                  ),
-                  const Tab(text: 'Mis amigos'),
-                ],
-              ),
-      ),
-      body: Column(children: [
-        // ── Barra de búsqueda siempre visible ──────────
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-          child: TextField(
-            controller: _busquedaCtrl,
-            onChanged: _onBusquedaChanged,
-            textInputAction: TextInputAction.search,
-            style: const TextStyle(color: Colors.white, fontSize: 14),
-            decoration: InputDecoration(
-              hintText: 'Buscar por nombre o @usuario...',
-              hintStyle: const TextStyle(
-                  color: Color(0xFF7878AA), fontSize: 13),
-              prefixIcon: const Icon(Icons.search,
-                  color: Color(0xFF7878AA), size: 20),
-              suffixIcon: _busquedaCtrl.text.isNotEmpty
-                  ? IconButton(
-                      icon: const Icon(Icons.close,
-                          color: Color(0xFF7878AA), size: 18),
-                      onPressed: () {
-                        _busquedaCtrl.clear();
-                        FocusScope.of(context).unfocus();
-                        setState(() {
-                          _resultados = [];
-                          _busquedaActiva = false;
-                          _buscando = false;
-                        });
-                      },
-                    )
-                  : null,
-              filled: true,
-              fillColor: const Color(0xFF181828),
-              contentPadding: const EdgeInsets.symmetric(
-                  vertical: 12, horizontal: 14),
-              border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(14),
-                  borderSide:
-                      const BorderSide(color: Color(0x20FFFFFF))),
-              enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(14),
-                  borderSide:
-                      const BorderSide(color: Color(0x20FFFFFF))),
-              focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(14),
-                  borderSide: const BorderSide(
-                      color: Color(0xFFFF6B35), width: 1.5)),
-            ),
+        // ── Tabs personalizados (sin TabController) ──────
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(48),
+          child: Container(
+            color: const Color(0xFF0D0D1A),
+            child: Row(children: [
+              _TabBtn(
+                  label: 'Buscar amigos',
+                  activo: _tabActual == 0,
+                  onTap: () => _cambiarTab(0)),
+              _TabBtn(
+                  label: 'Solicitudes',
+                  activo: _tabActual == 1,
+                  badge: pendCount > 0 ? pendCount : null,
+                  onTap: () => _cambiarTab(1)),
+              _TabBtn(
+                  label: 'Mis amigos',
+                  activo: _tabActual == 2,
+                  onTap: () => _cambiarTab(2)),
+            ]),
           ),
         ),
-
-        // ── Contenido: resultados O tabs ───────────────
-        Expanded(
-          child: _busquedaActiva
-              ? _buildResultados()
-              : TabBarView(
-                  controller: _tabCtrl,
-                  physics: const NeverScrollableScrollPhysics(),
-                  children: [
-                    _buildSolicitudes(),
-                    _buildAmigos(),
-                  ],
-                ),
-        ),
-      ]),
+      ),
+      // ── Contenido por IndexedStack (sin animación) ────
+      body: IndexedStack(
+        index: _tabActual,
+        children: [
+          _buildBuscar(),
+          _buildSolicitudes(),
+          _buildAmigos(),
+        ],
+      ),
     );
   }
 
-  // ── Resultados de búsqueda ──────────────────────────
-  Widget _buildResultados() {
+  // ── Tab 0: Buscar amigos ──────────────────────────────
+  Widget _buildBuscar() {
+    return Column(children: [
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+        child: TextField(
+          controller: _busquedaCtrl,
+          focusNode: _focusBusqueda,
+          onChanged: _onBusquedaChanged,
+          textInputAction: TextInputAction.search,
+          style: const TextStyle(color: Colors.white, fontSize: 14),
+          decoration: InputDecoration(
+            hintText: 'Buscar por nombre o @usuario...',
+            hintStyle:
+                const TextStyle(color: Color(0xFF7878AA), fontSize: 13),
+            prefixIcon:
+                const Icon(Icons.search, color: Color(0xFF7878AA), size: 20),
+            suffixIcon: _busquedaCtrl.text.isNotEmpty
+                ? IconButton(
+                    icon: const Icon(Icons.close,
+                        color: Color(0xFF7878AA), size: 18),
+                    onPressed: () {
+                      _busquedaCtrl.clear();
+                      _focusBusqueda.unfocus();
+                      setState(() {
+                        _resultados = [];
+                        _busquedaActiva = false;
+                        _buscando = false;
+                      });
+                    },
+                  )
+                : null,
+            filled: true,
+            fillColor: const Color(0xFF181828),
+            contentPadding:
+                const EdgeInsets.symmetric(vertical: 12, horizontal: 14),
+            border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: const BorderSide(color: Color(0x20FFFFFF))),
+            enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: const BorderSide(color: Color(0x20FFFFFF))),
+            focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide:
+                    const BorderSide(color: Color(0xFFFF6B35), width: 1.5)),
+          ),
+        ),
+      ),
+      Expanded(child: _buildResultadosBusqueda()),
+    ]);
+  }
+
+  Widget _buildResultadosBusqueda() {
+    if (!_busquedaActiva) {
+      return const _EstadoVacio(
+        emoji: '🔍',
+        titulo: 'Busca amigos',
+        subtitulo: 'Escribe el nombre o @usuario para encontrar personas',
+      );
+    }
     if (_buscando) {
       return const Center(
           child: CircularProgressIndicator(
@@ -272,7 +271,7 @@ class _BuscarAmigosScreenState extends State<BuscarAmigosScreen>
     }
     if (_resultados.isEmpty) {
       return const _EstadoVacio(
-        emoji: '🔍',
+        emoji: '😕',
         titulo: 'Sin resultados',
         subtitulo: 'No encontramos usuarios con ese nombre o @usuario',
       );
@@ -292,7 +291,7 @@ class _BuscarAmigosScreenState extends State<BuscarAmigosScreen>
     );
   }
 
-  // ── Tab Solicitudes ─────────────────────────────────
+  // ── Tab 1: Solicitudes ────────────────────────────────
   Widget _buildSolicitudes() {
     if (_cargandoPendientes) {
       return const Center(
@@ -316,12 +315,10 @@ class _BuscarAmigosScreenState extends State<BuscarAmigosScreen>
         itemBuilder: (_, i) {
           final s = _pendientes[i];
           final amistadId = (s['id'] as num?)?.toInt() ?? 0;
-          final user =
-              s['solicitante'] as Map<String, dynamic>? ?? {};
+          final user = s['solicitante'] as Map<String, dynamic>? ?? {};
           final nombre = user['nombre'] as String? ?? 'Usuario';
           final username = user['username'] as String? ?? '';
           final ciudad = user['ciudad'] as String? ?? '';
-          final ini = _iniciales(nombre);
 
           return Container(
             margin: const EdgeInsets.only(bottom: 10),
@@ -332,7 +329,7 @@ class _BuscarAmigosScreenState extends State<BuscarAmigosScreen>
               border: Border.all(color: const Color(0x14FFFFFF)),
             ),
             child: Row(children: [
-              _Avatar(iniciales: ini, size: 44),
+              _Avatar(iniciales: _iniciales(nombre), size: 44),
               const SizedBox(width: 10),
               Expanded(
                 child: Column(
@@ -340,13 +337,11 @@ class _BuscarAmigosScreenState extends State<BuscarAmigosScreen>
                     children: [
                       Text(nombre,
                           style: const TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w700)),
+                              fontSize: 13, fontWeight: FontWeight.w700)),
                       Text(
                           '@$username${ciudad.isNotEmpty ? '  ·  $ciudad' : ''}',
                           style: const TextStyle(
-                              fontSize: 11,
-                              color: Color(0xFF7878AA))),
+                              fontSize: 11, color: Color(0xFF7878AA))),
                     ]),
               ),
               Row(children: [
@@ -358,8 +353,7 @@ class _BuscarAmigosScreenState extends State<BuscarAmigosScreen>
                     decoration: BoxDecoration(
                       color: const Color(0x15FF4D4D),
                       borderRadius: BorderRadius.circular(10),
-                      border: Border.all(
-                          color: const Color(0x40FF4D4D)),
+                      border: Border.all(color: const Color(0x40FF4D4D)),
                     ),
                     child: const Text('Rechazar',
                         style: TextStyle(
@@ -375,10 +369,8 @@ class _BuscarAmigosScreenState extends State<BuscarAmigosScreen>
                     padding: const EdgeInsets.symmetric(
                         horizontal: 10, vertical: 6),
                     decoration: BoxDecoration(
-                      gradient: const LinearGradient(colors: [
-                        Color(0xFFFF6B35),
-                        Color(0xFFFF4D88)
-                      ]),
+                      gradient: const LinearGradient(
+                          colors: [Color(0xFFFF6B35), Color(0xFFFF4D88)]),
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: const Text('Aceptar',
@@ -396,7 +388,7 @@ class _BuscarAmigosScreenState extends State<BuscarAmigosScreen>
     );
   }
 
-  // ── Tab Mis amigos ──────────────────────────────────
+  // ── Tab 2: Mis amigos ─────────────────────────────────
   Widget _buildAmigos() {
     if (_cargandoAmigos) {
       return const Center(
@@ -407,7 +399,7 @@ class _BuscarAmigosScreenState extends State<BuscarAmigosScreen>
       return const _EstadoVacio(
         emoji: '👥',
         titulo: 'Aún no tienes amigos',
-        subtitulo: 'Busca usuarios arriba y envíales una solicitud',
+        subtitulo: 'Busca usuarios en la pestaña "Buscar amigos"',
       );
     }
     return RefreshIndicator(
@@ -428,11 +420,10 @@ class _BuscarAmigosScreenState extends State<BuscarAmigosScreen>
           final ciudad = u['ciudad_usuario'] as String? ??
               u['ciudad'] as String? ??
               '';
-          final xp = (u['xp_total_usuario'] as num? ??
-                  u['xp_total'] as num?)
-              ?.toInt() ??
-              0;
-          final ini = _iniciales(nombre);
+          final xp =
+              (u['xp_total_usuario'] as num? ?? u['xp_total'] as num?)
+                  ?.toInt() ??
+                  0;
 
           return Container(
             margin: const EdgeInsets.only(bottom: 10),
@@ -443,7 +434,7 @@ class _BuscarAmigosScreenState extends State<BuscarAmigosScreen>
               border: Border.all(color: const Color(0x14FFFFFF)),
             ),
             child: Row(children: [
-              _Avatar(iniciales: ini, size: 44),
+              _Avatar(iniciales: _iniciales(nombre), size: 44),
               const SizedBox(width: 10),
               Expanded(
                 child: Column(
@@ -451,23 +442,20 @@ class _BuscarAmigosScreenState extends State<BuscarAmigosScreen>
                     children: [
                       Text(nombre,
                           style: const TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w700)),
+                              fontSize: 13, fontWeight: FontWeight.w700)),
                       Text(
                           '@$username${ciudad.isNotEmpty ? '  ·  $ciudad' : ''}',
                           style: const TextStyle(
-                              fontSize: 11,
-                              color: Color(0xFF7878AA))),
+                              fontSize: 11, color: Color(0xFF7878AA))),
                     ]),
               ),
               Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 8, vertical: 4),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
                   color: const Color(0x1AFFD93D),
                   borderRadius: BorderRadius.circular(10),
-                  border:
-                      Border.all(color: const Color(0x66FFD93D)),
+                  border: Border.all(color: const Color(0x66FFD93D)),
                 ),
                 child: Text(
                     '⚡ ${xp >= 1000 ? '${(xp / 1000).toStringAsFixed(1)}k' : '$xp'} XP',
@@ -489,6 +477,75 @@ class _BuscarAmigosScreenState extends State<BuscarAmigosScreen>
         .take(2)
         .map((w) => w.isNotEmpty ? w[0].toUpperCase() : '')
         .join();
+  }
+}
+
+// ── Botón de tab personalizado ─────────────────────────────
+
+class _TabBtn extends StatelessWidget {
+  final String label;
+  final bool activo;
+  final int? badge;
+  final VoidCallback onTap;
+
+  const _TabBtn({
+    required this.label,
+    required this.activo,
+    required this.onTap,
+    this.badge,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        behavior: HitTestBehavior.opaque,
+        child: Container(
+          height: 48,
+          decoration: BoxDecoration(
+            border: Border(
+              bottom: BorderSide(
+                color: activo
+                    ? const Color(0xFFFF6B35)
+                    : Colors.transparent,
+                width: 2,
+              ),
+            ),
+          ),
+          child: Center(
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                  color: activo
+                      ? const Color(0xFFFF6B35)
+                      : const Color(0xFF7878AA),
+                ),
+              ),
+              if (badge != null) ...[
+                const SizedBox(width: 5),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFF4D4D),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text('$badge',
+                      style: const TextStyle(
+                          fontSize: 9,
+                          fontWeight: FontWeight.w900,
+                          color: Colors.white)),
+                ),
+              ],
+            ]),
+          ),
+        ),
+      ),
+    );
   }
 }
 
@@ -576,14 +633,10 @@ class _UsuarioCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final nombre =
-        usuario['nombre_usuario'] as String? ?? 'Usuario';
-    final username =
-        usuario['username_usuario'] as String? ?? '';
-    final ciudad =
-        usuario['ciudad_usuario'] as String? ?? '';
-    final xp =
-        (usuario['xp_total_usuario'] as num?)?.toInt() ?? 0;
+    final nombre = usuario['nombre_usuario'] as String? ?? 'Usuario';
+    final username = usuario['username_usuario'] as String? ?? '';
+    final ciudad = usuario['ciudad_usuario'] as String? ?? '';
+    final xp = (usuario['xp_total_usuario'] as num?)?.toInt() ?? 0;
     final palabras = nombre.trim().split(' ');
     final ini = palabras
         .take(2)
@@ -673,8 +726,7 @@ class _BtnAgregar extends StatelessWidget {
           borderRadius: BorderRadius.circular(10),
         ),
         child: const Row(mainAxisSize: MainAxisSize.min, children: [
-          Icon(Icons.person_add_outlined,
-              size: 14, color: Colors.white),
+          Icon(Icons.person_add_outlined, size: 14, color: Colors.white),
           SizedBox(width: 4),
           Text('Agregar',
               style: TextStyle(
