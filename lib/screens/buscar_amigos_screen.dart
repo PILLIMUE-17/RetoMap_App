@@ -9,8 +9,9 @@ class BuscarAmigosScreen extends StatefulWidget {
   State<BuscarAmigosScreen> createState() => _BuscarAmigosScreenState();
 }
 
-class _BuscarAmigosScreenState extends State<BuscarAmigosScreen> {
-  int _tabActual = 0; // 0=Buscar, 1=Solicitudes, 2=Amigos
+class _BuscarAmigosScreenState extends State<BuscarAmigosScreen>
+    with SingleTickerProviderStateMixin {
+  late TabController _tabCtrl;
 
   // ── Búsqueda ──────────────────────────────────────────
   final _busquedaCtrl = TextEditingController();
@@ -20,11 +21,11 @@ class _BuscarAmigosScreenState extends State<BuscarAmigosScreen> {
   bool _busquedaActiva = false;
   Timer? _debounce;
 
-  // ── Solicitudes pendientes ─────────────────────────────
+  // ── Solicitudes ────────────────────────────────────────
   List<Map<String, dynamic>> _pendientes = [];
   bool _cargandoPendientes = true;
 
-  // ── Mis amigos ─────────────────────────────────────────
+  // ── Amigos ─────────────────────────────────────────────
   List<Map<String, dynamic>> _amigos = [];
   bool _cargandoAmigos = true;
 
@@ -34,24 +35,27 @@ class _BuscarAmigosScreenState extends State<BuscarAmigosScreen> {
   @override
   void initState() {
     super.initState();
+    _tabCtrl = TabController(length: 3, vsync: this);
+    _tabCtrl.addListener(_onTabChanged);
     _cargarPendientes();
     _cargarAmigos();
   }
 
+  void _onTabChanged() {
+    // Cerrar teclado al salir de la pestaña Buscar
+    if (_tabCtrl.index != 0 && _focusBusqueda.hasFocus) {
+      _focusBusqueda.unfocus();
+    }
+  }
+
   @override
   void dispose() {
+    _tabCtrl.removeListener(_onTabChanged);
+    _tabCtrl.dispose();
     _busquedaCtrl.dispose();
     _focusBusqueda.dispose();
     _debounce?.cancel();
     super.dispose();
-  }
-
-  void _cambiarTab(int idx) {
-    if (idx != 0) {
-      // Al salir de Buscar, cierra el teclado limpiamente
-      _focusBusqueda.unfocus();
-    }
-    setState(() => _tabActual = idx);
   }
 
   // ── Carga de datos ────────────────────────────────────
@@ -156,7 +160,7 @@ class _BuscarAmigosScreenState extends State<BuscarAmigosScreen> {
     ));
   }
 
-  // ── UI ────────────────────────────────────────────────
+  // ── Build ─────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     final pendCount = _pendientes.length;
@@ -168,32 +172,42 @@ class _BuscarAmigosScreenState extends State<BuscarAmigosScreen> {
         elevation: 0,
         title: const Text('Amigos',
             style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
-        // ── Tabs personalizados (sin TabController) ──────
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(48),
-          child: Container(
-            color: const Color(0xFF0D0D1A),
-            child: Row(children: [
-              _TabBtn(
-                  label: 'Buscar amigos',
-                  activo: _tabActual == 0,
-                  onTap: () => _cambiarTab(0)),
-              _TabBtn(
-                  label: 'Solicitudes',
-                  activo: _tabActual == 1,
-                  badge: pendCount > 0 ? pendCount : null,
-                  onTap: () => _cambiarTab(1)),
-              _TabBtn(
-                  label: 'Mis amigos',
-                  activo: _tabActual == 2,
-                  onTap: () => _cambiarTab(2)),
-            ]),
-          ),
+        bottom: TabBar(
+          controller: _tabCtrl,
+          indicatorColor: const Color(0xFFFF6B35),
+          labelColor: const Color(0xFFFF6B35),
+          unselectedLabelColor: const Color(0xFF7878AA),
+          labelStyle:
+              const TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
+          tabs: [
+            const Tab(text: 'Buscar amigos'),
+            Tab(
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                const Text('Solicitudes'),
+                if (pendCount > 0) ...[
+                  const SizedBox(width: 5),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFF4D4D),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text('$pendCount',
+                        style: const TextStyle(
+                            fontSize: 9,
+                            fontWeight: FontWeight.w900,
+                            color: Colors.white)),
+                  ),
+                ],
+              ]),
+            ),
+            const Tab(text: 'Mis amigos'),
+          ],
         ),
       ),
-      // ── Contenido por IndexedStack (sin animación) ────
-      body: IndexedStack(
-        index: _tabActual,
+      body: TabBarView(
+        controller: _tabCtrl,
         children: [
           _buildBuscar(),
           _buildSolicitudes(),
@@ -399,7 +413,7 @@ class _BuscarAmigosScreenState extends State<BuscarAmigosScreen> {
       return const _EstadoVacio(
         emoji: '👥',
         titulo: 'Aún no tienes amigos',
-        subtitulo: 'Busca usuarios en la pestaña "Buscar amigos"',
+        subtitulo: 'Busca usuarios en "Buscar amigos" y envíales una solicitud',
       );
     }
     return RefreshIndicator(
@@ -477,75 +491,6 @@ class _BuscarAmigosScreenState extends State<BuscarAmigosScreen> {
         .take(2)
         .map((w) => w.isNotEmpty ? w[0].toUpperCase() : '')
         .join();
-  }
-}
-
-// ── Botón de tab personalizado ─────────────────────────────
-
-class _TabBtn extends StatelessWidget {
-  final String label;
-  final bool activo;
-  final int? badge;
-  final VoidCallback onTap;
-
-  const _TabBtn({
-    required this.label,
-    required this.activo,
-    required this.onTap,
-    this.badge,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      child: GestureDetector(
-        onTap: onTap,
-        behavior: HitTestBehavior.opaque,
-        child: Container(
-          height: 48,
-          decoration: BoxDecoration(
-            border: Border(
-              bottom: BorderSide(
-                color: activo
-                    ? const Color(0xFFFF6B35)
-                    : Colors.transparent,
-                width: 2,
-              ),
-            ),
-          ),
-          child: Center(
-            child: Row(mainAxisSize: MainAxisSize.min, children: [
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w800,
-                  color: activo
-                      ? const Color(0xFFFF6B35)
-                      : const Color(0xFF7878AA),
-                ),
-              ),
-              if (badge != null) ...[
-                const SizedBox(width: 5),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFF4D4D),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Text('$badge',
-                      style: const TextStyle(
-                          fontSize: 9,
-                          fontWeight: FontWeight.w900,
-                          color: Colors.white)),
-                ),
-              ],
-            ]),
-          ),
-        ),
-      ),
-    );
   }
 }
 
